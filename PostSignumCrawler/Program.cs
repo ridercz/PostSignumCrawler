@@ -7,6 +7,7 @@ using System.Text;
 using NConsoler;
 using Org.BouncyCastle.X509;
 using Org.BouncyCastle.Crypto.Parameters;
+using System.Security.Cryptography.X509Certificates;
 
 namespace PostSignumCrawler {
     class Program {
@@ -14,6 +15,7 @@ namespace PostSignumCrawler {
         private const string HTML_START = "<a title=\"Formát určený pro OS Linux a ostatní OS.\" href=\"";
         private const string HTML_END = "\"";
         private const string HTML_ENCODING = "iso-8859-2";
+        private const int CRL_TIMEOUT = 1000; //ms
 
         private static readonly string[] _certExts = { ".cer", ".crt", ".der", ".pem" };
         private static readonly Encoding _encoding = Encoding.GetEncoding(HTML_ENCODING);
@@ -87,12 +89,13 @@ namespace PostSignumCrawler {
         [Action("Create index of certificates")]
         public static void Index(
             [Optional("found", "f", Description = "Folder with certificates")] string folderName,
-            [Optional(false, "np", Description = "Do not show progress on console (faster)")] bool noProgress) {
+            [Optional(false, "np", Description = "Do not show progress on console (faster)")] bool noProgress,
+            [Optional(false, "v", Description = "Verify certificate against CRL")] bool verify) {
             Console.WriteLine("Indexing...");
             var sb = new StringBuilder();
-            sb.AppendLine(string.Join("\t", "SerialNumber", "Hash", "NotBefore", "NotAfter", "Length", "Domain", "Name", "Email", "Issuer", "Subject"));
+            sb.AppendLine(string.Join("\t", "SerialNumber", "Hash", "NotBefore", "NotAfter", "Length", "Status", "Domain", "Name", "Email", "Issuer", "Subject"));
 
-            IndexFolder(folderName, sb, noProgress);
+            IndexFolder(folderName, sb, noProgress, verify);
 
             var indexFileName = Path.Combine(folderName, "index.csv");
             File.WriteAllText(indexFileName, sb.ToString());
@@ -100,23 +103,34 @@ namespace PostSignumCrawler {
 
         // Helper methods
 
-        private static void IndexFolder(string folderName, StringBuilder sb, bool noProgress) {
+        private static void IndexFolder(string folderName, StringBuilder sb, bool noProgress, bool verify) {
+            // Process all file in folder
             foreach (var fileName in Directory.GetFiles(folderName)) {
                 if (!_certExts.Contains(Path.GetExtension(fileName).ToLowerInvariant())) continue;
 
+                // Get basic cert properties
                 var cert = new System.Security.Cryptography.X509Certificates.X509Certificate2(fileName);
                 var email = cert.GetNameInfo(System.Security.Cryptography.X509Certificates.X509NameType.EmailName, false);
                 var domain = email.Substring(email.IndexOf('@') + 1);
                 var name = cert.GetNameInfo(System.Security.Cryptography.X509Certificates.X509NameType.SimpleName, false);
+                if (!noProgress) Console.Write($"0x{cert.GetSerialNumberString(),-8} {email,-40} {name,-30} ");
 
-                if (!noProgress) Console.WriteLine($"  0x{cert.GetSerialNumberString(),-20} {email,-40} {name}");
+                // Verify certificate
+                var status = "Unknown";
+                if (verify) {
+                    var certValid = ValidateCertificate(cert);
+                    status = certValid ? "OK" : "Revoked";
+                }
+                if (!noProgress) Console.WriteLine(status);
 
+                // Add line to index
                 sb.AppendLine(string.Join("\t",
                     "0x" + cert.GetSerialNumberString(),
                     cert.GetCertHashString(),
                     cert.NotBefore.ToString("yyyy-MM-dd"),
                     cert.NotAfter.ToString("yyyy-MM-dd"),
                     cert.PublicKey.Key.KeySize,
+                    status,
                     domain,
                     name,
                     email,
@@ -124,9 +138,20 @@ namespace PostSignumCrawler {
                     cert.Subject));
             }
 
+            // Crafl subfolders
             foreach (var subFolderName in Directory.GetDirectories(folderName)) {
-                IndexFolder(subFolderName, sb, noProgress);
+                IndexFolder(subFolderName, sb, noProgress, verify);
             }
+        }
+
+        private static bool ValidateCertificate(X509Certificate2 cert) {
+            var chain = new X509Chain();
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.Online;
+            chain.ChainPolicy.RevocationFlag = X509RevocationFlag.EntireChain;
+            chain.ChainPolicy.UrlRetrievalTimeout = TimeSpan.FromMilliseconds(CRL_TIMEOUT);
+            chain.ChainPolicy.VerificationTime = DateTime.Now;
+            var certValid = chain.Build(cert);
+            return certValid;
         }
 
         private static void ProcessCertificate(string cacheFolder, string foundFolder, int wait, bool downloadOnly, int serialNumber) {
