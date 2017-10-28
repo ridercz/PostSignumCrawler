@@ -16,6 +16,7 @@ namespace PostSignumCrawler {
         private const string HTML_END = "\"";
         private const string HTML_ENCODING = "iso-8859-2";
         private const int CRL_TIMEOUT = 1000; //ms
+        private const string CSV_SEPARATOR = ";";
 
         private static readonly string[] _certExts = { ".cer", ".crt", ".der", ".pem" };
         private static readonly Encoding _encoding = Encoding.GetEncoding(HTML_ENCODING);
@@ -92,8 +93,22 @@ namespace PostSignumCrawler {
             [Optional(false, "np", Description = "Do not show progress on console (faster)")] bool noProgress,
             [Optional(false, "v", Description = "Verify certificate against CRL")] bool verify) {
             Console.WriteLine("Indexing...");
+
+            // Prepare CSV builder
             var sb = new StringBuilder();
-            sb.AppendLine(string.Join("\t", "SerialHex", "SerialDec", "Hash", "NotBefore", "NotAfter", "Length", "Status", "Domain", "Name", "Email", "Issuer", "Subject"));
+            sb.AppendLine(string.Join(CSV_SEPARATOR,
+                "SerialHex",
+                "SerialDec",
+                "Hash",
+                "NotBefore",
+                "NotAfter",
+                "Length",
+                "Status",
+                "Domain",
+                "Name",
+                "Email",
+                "Issuer",
+                "Subject"));
 
             IndexFolder(folderName, sb, noProgress, verify);
 
@@ -126,7 +141,7 @@ namespace PostSignumCrawler {
                 if (!noProgress) Console.WriteLine(status);
 
                 // Add line to index
-                sb.AppendLine(string.Join("\t",
+                sb.AppendLine(string.Join(CSV_SEPARATOR,
                     serialNumberHex,
                     serialNumberDec,
                     cert.GetCertHashString(),
