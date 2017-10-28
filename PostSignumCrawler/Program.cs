@@ -93,7 +93,7 @@ namespace PostSignumCrawler {
             [Optional(false, "v", Description = "Verify certificate against CRL")] bool verify) {
             Console.WriteLine("Indexing...");
             var sb = new StringBuilder();
-            sb.AppendLine(string.Join("\t", "SerialNumber", "Hash", "NotBefore", "NotAfter", "Length", "Status", "Domain", "Name", "Email", "Issuer", "Subject"));
+            sb.AppendLine(string.Join("\t", "SerialHex", "SerialDec", "Hash", "NotBefore", "NotAfter", "Length", "Status", "Domain", "Name", "Email", "Issuer", "Subject"));
 
             IndexFolder(folderName, sb, noProgress, verify);
 
@@ -110,10 +110,12 @@ namespace PostSignumCrawler {
 
                 // Get basic cert properties
                 var cert = new System.Security.Cryptography.X509Certificates.X509Certificate2(fileName);
+                var serialNumberHex = "0x" + cert.GetSerialNumberString();
+                var serialNumberDec = uint.Parse(cert.GetSerialNumberString(), System.Globalization.NumberStyles.HexNumber);
                 var email = cert.GetNameInfo(System.Security.Cryptography.X509Certificates.X509NameType.EmailName, false);
                 var domain = email.Substring(email.IndexOf('@') + 1);
                 var name = cert.GetNameInfo(System.Security.Cryptography.X509Certificates.X509NameType.SimpleName, false);
-                if (!noProgress) Console.Write($"0x{cert.GetSerialNumberString(),-8} {email,-40} {name,-30} ");
+                if (!noProgress) Console.Write($"0x{serialNumberHex,-8} {email,-40} {name,-30} ");
 
                 // Verify certificate
                 var status = "Unknown";
@@ -125,7 +127,8 @@ namespace PostSignumCrawler {
 
                 // Add line to index
                 sb.AppendLine(string.Join("\t",
-                    "0x" + cert.GetSerialNumberString(),
+                    serialNumberHex,
+                    serialNumberDec,
                     cert.GetCertHashString(),
                     cert.NotBefore.ToString("yyyy-MM-dd"),
                     cert.NotAfter.ToString("yyyy-MM-dd"),
